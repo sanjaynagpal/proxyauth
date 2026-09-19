@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>proxyauth — design document</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#eef2f0;
+    --surface:#ffffff;
+    --ink:#16232b;
+    --ink-dim:#55666d;
+    --line:#d7dedb;
+    --accent:#c97a24;
+    --accent-text:#9c5c17;
+    --accent-soft:#f4e3cd;
+    --ok:#2f8f5b;
+    --ok-soft:#dcefe3;
+    --warn:#c1432c;
+    --warn-soft:#f6ded8;
+    --code-bg:#f4f7f6;
+    --font-body:'IBM Plex Sans',-apple-system,'Segoe UI',sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#121a20;
+      --surface:#182229;
+      --ink:#e8eeea;
+      --ink-dim:#96a5a6;
+      --line:#2a383f;
+      --accent:#e8a33d;
+      --accent-text:#f0b968;
+      --accent-soft:#3a2c17;
+      --ok:#6fbf8b;
+      --ok-soft:#1c3327;
+      --warn:#e2795f;
+      --warn-soft:#3a2119;
+      --code-bg:#0f171c;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#121a20;
+    --surface:#182229;
+    --ink:#e8eeea;
+    --ink-dim:#96a5a6;
+    --line:#2a383f;
+    --accent:#e8a33d;
+    --accent-text:#f0b968;
+    --accent-soft:#3a2c17;
+    --ok:#6fbf8b;
+    --ok-soft:#1c3327;
+    --warn:#e2795f;
+    --warn-soft:#3a2119;
+    --code-bg:#0f171c;
+  }
+
+  *{box-sizing:border-box;}
+  html{background:var(--paper);}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    font-size:16px;
+    line-height:1.6;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    html{scroll-behavior:smooth;}
+  }
+  ::selection{background:var(--accent-soft);color:var(--ink);}
+
+  a{color:var(--accent-text);}
+  a:focus-visible, button:focus-visible, summary:focus-visible{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+  }
+
+  .wrap{max-width:820px;margin:0 auto;padding:0 24px 96px;}
+  .wide{max-width:960px;}
+
+  /* ---------- masthead ---------- */
+  header.masthead{
+    max-width:960px;margin:0 auto;padding:56px 24px 32px;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-family:var(--font-mono);font-size:12px;font-weight:600;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--accent-text);
+    margin:0 0 14px;
+  }
+  h1.title{
+    font-family:var(--font-mono);font-weight:600;
+    font-size:clamp(2.4rem,6vw,3.6rem);
+    letter-spacing:-.01em;
+    margin:0 0 16px;
+    text-wrap:balance;
+  }
+  .dek{
+    font-size:1.15rem;color:var(--ink-dim);max-width:640px;
+    margin:0 0 28px;text-wrap:balance;
+  }
+  .facts{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:1px;background:var(--line);border:1px solid var(--line);
+    font-family:var(--font-mono);font-size:12.5px;
+  }
+  .facts dl{margin:0;background:var(--surface);padding:12px 16px;}
+  .facts dt{color:var(--ink-dim);letter-spacing:.06em;text-transform:uppercase;font-size:10.5px;margin-bottom:5px;}
+  .facts dd{margin:0;font-weight:500;word-break:break-word;}
+
+  /* ---------- nav ---------- */
+  nav.toc{
+    position:sticky;top:0;z-index:5;
+    background:color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--line);
+  }
+  nav.toc ol{
+    max-width:960px;margin:0 auto;padding:0 24px;
+    list-style:none;display:flex;gap:22px;overflow-x:auto;
+    font-family:var(--font-mono);font-size:12px;letter-spacing:.02em;
+  }
+  nav.toc a{
+    display:inline-block;padding:12px 0;color:var(--ink-dim);
+    text-decoration:none;white-space:nowrap;border-bottom:2px solid transparent;
+  }
+  nav.toc a:hover{color:var(--ink);border-bottom-color:var(--accent);}
+
+  /* ---------- sections ---------- */
+  section{padding-top:56px;scroll-margin-top:52px;}
+  section:first-of-type{padding-top:48px;}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:18px;}
+  .sec-num{
+    font-family:var(--font-mono);font-size:13px;color:var(--accent-text);
+    border:1px solid var(--line);padding:3px 8px;border-radius:3px;
+    background:var(--surface);flex:none;
+  }
+  h2{
+    font-family:var(--font-mono);font-weight:600;font-size:1.5rem;
+    margin:0;text-wrap:balance;
+  }
+  h3{font-family:var(--font-mono);font-weight:600;font-size:1.05rem;margin:28px 0 10px;}
+  p{margin:0 0 16px;max-width:66ch;}
+  p.lead{font-size:1.05rem;color:var(--ink-dim);}
+  strong{font-weight:600;}
+  code{
+    font-family:var(--font-mono);font-size:.88em;
+    background:var(--code-bg);border:1px solid var(--line);
+    border-radius:3px;padding:.1em .35em;
+  }
+
+  /* numbered failure rows / testing rows */
+  .rows{border-top:1px solid var(--line);margin:22px 0 8px;}
+  .row{
+    display:grid;grid-template-columns:34px 1fr;gap:16px;
+    padding:18px 0;border-bottom:1px solid var(--line);
+  }
+  .row .n{font-family:var(--font-mono);color:var(--ink-dim);font-size:13px;padding-top:2px;}
+  .row h4{margin:0 0 6px;font-size:1rem;font-weight:600;}
+  .row p{margin:0;max-width:60ch;}
+
+  /* figures */
+  figure{margin:28px 0 8px;}
+  .panel{
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    padding:20px;overflow-x:auto;
+  }
+  figure svg{display:block;margin:0 auto;max-width:100%;height:auto;}
+  figcaption{
+    margin-top:10px;font-size:.9rem;color:var(--ink-dim);max-width:70ch;
+  }
+  figcaption b{color:var(--ink);font-weight:600;}
+
+  pre.mermaid{
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    padding:16px;margin:0;overflow-x:auto;
+  }
+
+  /* tables */
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;margin:22px 0;}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:.92rem;background:var(--surface);}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;}
+  thead th{
+    font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-dim);border-bottom:1px solid var(--line);background:var(--code-bg);
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  td code, th code{white-space:nowrap;}
+
+  /* callout */
+  .callout{
+    border:1px solid var(--line);border-left:3px solid var(--accent);
+    background:var(--accent-soft);border-radius:0 6px 6px 0;
+    padding:16px 18px;margin:22px 0;font-size:.95rem;
+  }
+  .callout p{margin:0;max-width:none;}
+  .callout .tag{
+    font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent-text);display:block;margin-bottom:6px;
+  }
+
+  footer{
+    max-width:960px;margin:64px auto 0;padding:24px 24px 0;
+    border-top:1px solid var(--line);
+    font-family:var(--font-mono);font-size:12px;color:var(--ink-dim);
+    display:flex;flex-wrap:wrap;gap:8px 18px;justify-content:space-between;
+  }
+
+  .ok-text{color:var(--ok);}
+  .warn-text{color:var(--warn);}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <p class="eyebrow">Design document — Go package</p>
+  <h1 class="title">proxyauth</h1>
+  <p class="dek">An <code>http.RoundTripper</code> that takes over the CONNECT tunnel to complete a Negotiate/NTLM handshake against a corporate forward proxy — something <code>net/http</code> was never built to do on its own.</p>
+  <div class="facts">
+    <dl><dt>Module</dt><dd>github.com/sanjaynagpal/proxyauth</dd></dl>
+    <dl><dt>Runtime auth</dt><dd>Windows (SSPI) — package compiles everywhere</dd></dl>
+    <dl><dt>Dependency</dt><dd>github.com/alexbrainman/sspi</dd></dl>
+    <dl><dt>Go</dt><dd>1.21</dd></dl>
+    <dl><dt>License</dt><dd>MIT</dd></dl>
+  </div>
+</header>
+
+<nav class="toc">
+  <ol>
+    <li><a href="#problem">§1 The problem</a></li>
+    <li><a href="#architecture">§2 Architecture</a></li>
+    <li><a href="#handshake">§3 The handshake</a></li>
+    <li><a href="#platform">§4 Platform split</a></li>
+    <li><a href="#config">§5 Config</a></li>
+    <li><a href="#casestudy">§6 Case study</a></li>
+    <li><a href="#testing">§7 Testing</a></li>
+  </ol>
+</nav>
+
+<main class="wrap">
+
+  <section id="problem">
+    <div class="sec-head"><span class="sec-num">§1</span><h2>The problem</h2></div>
+    <p class="lead">Three specific things about corporate forward proxies that <code>net/http</code> does not, and structurally cannot, handle on its own.</p>
+
+    <div class="rows">
+      <div class="row">
+        <div class="n">01</div>
+        <div>
+          <h4>No Negotiate/NTLM support</h4>
+          <p><code>net/http</code> only ever preloads <code>Proxy-Authorization: Basic …</code> from credentials embedded in the proxy URL. It has no concept of a challenge–response scheme — Negotiate and NTLM don't exist to it.</p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="n">02</div>
+        <div>
+          <h4>The 407 never surfaces</h4>
+          <p>For an HTTPS request the challenge arrives while <code>CONNECT</code> is still being negotiated, so it reaches calling code as an <strong>error</strong> from <code>RoundTrip</code> — not a <code>*http.Response</code> you can inspect and retry.</p>
+        </div>
+      </div>
+      <div class="row">
+        <div class="n">03</div>
+        <div>
+          <h4>NTLM remembers the connection</h4>
+          <p>Type&nbsp;1 → Type&nbsp;2 → Type&nbsp;3 must run on <strong>one</strong> kept-alive TCP connection to the proxy. <code>http.Transport</code>'s built-in <code>CONNECT</code> handling tears the connection down the instant it sees anything but <code>200</code>.</p>
+        </div>
+      </div>
+    </div>
+
+    <p>proxyauth exists to own that one connection for exactly as long as the handshake needs it, then quietly hand it back to the standard library.</p>
+  </section>
+
+  <section id="architecture">
+    <div class="sec-head"><span class="sec-num">§2</span><h2>Architecture</h2></div>
+    <p class="lead">A <code>Transport</code> is really two ordinary <code>*http.Transport</code>s wearing one <code>RoundTripper</code> face. It resolves a proxy for each request — <code>Config.Proxy</code>, then <code>Config.ProxyURL</code>, then <code>http.ProxyFromEnvironment</code> — and routes on the result.</p>
+    <p>No proxy applies: the request goes to <code>direct</code>, dialing straight to the origin exactly as <code>net/http</code> always has. A proxy applies: the request goes to <code>tunneled</code>, whose <code>DialContext</code> is <code>dialTunnel</code> — the only place proxyauth actually intervenes.</p>
+
+    <figure>
+      <div class="panel">
+        <svg viewBox="0 0 860 400" role="img" aria-label="RoundTrip forks into a direct path or a tunneled path depending on whether a proxy resolves for the request; both paths converge back into an ordinary http.Transport performing the origin TLS handshake and HTTP request.">
+          <defs>
+            <marker id="arrow1" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <polygon points="0,0 8,4 0,8" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">
+
+            <rect x="330" y="16" width="200" height="46" rx="4" fill="none" stroke="currentColor"/>
+            <text x="430" y="44" text-anchor="middle">RoundTrip(req)</text>
+
+            <line x1="430" y1="62" x2="200" y2="106" stroke="currentColor" marker-end="url(#arrow1)"/>
+            <text x="290" y="82" text-anchor="middle" font-size="11" fill="var(--ink-dim)">no proxy</text>
+
+            <line x1="430" y1="62" x2="660" y2="106" stroke="var(--accent)" marker-end="url(#arrow1)"/>
+            <text x="570" y="82" text-anchor="middle" font-size="11" fill="var(--accent-text)">proxy resolved</text>
+
+            <rect x="70" y="108" width="260" height="50" rx="4" fill="none" stroke="currentColor"/>
+            <text x="200" y="138" text-anchor="middle">direct *http.Transport</text>
+
+            <rect x="530" y="108" width="260" height="50" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="660" y="138" text-anchor="middle" fill="var(--accent-text)">tunneled *http.Transport</text>
+
+            <line x1="200" y1="158" x2="200" y2="196" stroke="currentColor" marker-end="url(#arrow1)"/>
+            <line x1="660" y1="158" x2="660" y2="196" stroke="var(--accent)" marker-end="url(#arrow1)"/>
+
+            <rect x="60" y="198" width="280" height="58" rx="4" fill="none" stroke="currentColor"/>
+            <text x="200" y="222" text-anchor="middle">dial(ctx, network, addr)</text>
+            <text x="200" y="242" text-anchor="middle" font-size="11" fill="var(--ink-dim)">plain TCP → origin</text>
+
+            <rect x="500" y="198" width="320" height="80" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="660" y="222" text-anchor="middle" fill="var(--accent-text)">dialTunnel(ctx, network, addr)</text>
+            <text x="660" y="242" text-anchor="middle" font-size="11" fill="var(--ink-dim)">① dial proxy  ② TLS if proxy is https</text>
+            <text x="660" y="258" text-anchor="middle" font-size="11" fill="var(--ink-dim)">③ connect() — handshake, Fig. 2</text>
+
+            <line x1="200" y1="256" x2="400" y2="330" stroke="currentColor" marker-end="url(#arrow1)"/>
+            <line x1="660" y1="278" x2="460" y2="330" stroke="var(--accent)" marker-end="url(#arrow1)"/>
+
+            <rect x="270" y="332" width="320" height="52" rx="4" fill="none" stroke="currentColor"/>
+            <text x="430" y="354" text-anchor="middle">http.Transport: origin TLS</text>
+            <text x="430" y="372" text-anchor="middle">handshake + write the request</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption><b>Fig. 1</b> — Both paths converge on an ordinary <code>http.Transport</code> once a connection exists. proxyauth only ever replaces the <em>dial</em> step; connection pooling, HTTP/2, and the origin TLS handshake are unmodified standard-library behavior.</figcaption>
+    </figure>
+
+    <p>Once <code>connect()</code> succeeds, the raw, now-authenticated TCP connection is handed to <code>tunneled</code> exactly as if it had dialed the origin directly — which is why pooled connections stay usable across requests without repeating the handshake.</p>
+  </section>
+
+  <section id="handshake">
+    <div class="sec-head"><span class="sec-num">§3</span><h2>The handshake</h2></div>
+    <p class="lead"><code>connect()</code> drives every leg of the exchange on the single TCP connection <code>dialTunnel</code> opened, feeding each proxy token into SSPI and writing the result straight back as <code>Proxy-Authorization</code>.</p>
+
+    <figure>
+      <div class="panel">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as Client (Transport)
+    participant P as Proxy
+    C->>P: CONNECT origin:443&lt;br/&gt;Proxy-Connection: Keep-Alive
+    P-->>C: 407 Proxy Authentication Required&lt;br/&gt;Proxy-Authenticate: Negotiate, NTLM
+    Note over C: chooseScheme() picks the first&lt;br/&gt;preferred scheme the proxy offered
+    C->>P: CONNECT origin:443&lt;br/&gt;Proxy-Authorization: NTLM Type1
+    P-->>C: 407 Proxy Authentication Required&lt;br/&gt;Proxy-Authenticate: NTLM Type2
+    Note over C: SSPI consumes the Type2 challenge,&lt;br/&gt;emits the Type3 response
+    C->>P: CONNECT origin:443&lt;br/&gt;Proxy-Authorization: NTLM Type3
+    P-->>C: 200 Connection Established
+    Note over C,P: tunnel is live — no HTTP framing&lt;br/&gt;beyond this point (RFC 7230 §3.3.3)
+    C->>P: origin TLS ClientHello, then the real request
+    P-->>C: origin's response, relayed byte-for-byte
+        </pre>
+      </div>
+      <figcaption><b>Fig. 2</b> — A concrete NTLM exchange. Negotiate follows the same shape, wrapping a Kerberos AP-REQ when a KDC is reachable and falling back to this exact NTLM path otherwise. A proxy that drops keep-alive mid-handshake aborts the exchange — <code>connect()</code> checks <code>keepAlive(resp)</code> before sending the next leg.</figcaption>
+    </figure>
+
+    <p><code>MaxLegs</code> (default <code>10</code>) bounds how many round trips one handshake may take, and <code>HandshakeTimeout</code> (default <code>30s</code>) bounds the whole exchange — both exist purely as safety valves against a misbehaving proxy, since a well-behaved NTLM exchange finishes in exactly three legs and Negotiate/Kerberos in one or two.</p>
+  </section>
+
+  <section id="platform">
+    <div class="sec-head"><span class="sec-num">§4</span><h2>Platform split</h2></div>
+    <p class="lead">SSPI is a Windows API, so the actual credential and token machinery lives behind one small interface, swapped in at compile time by build tag.</p>
+
+    <figure>
+      <div class="panel">
+        <svg viewBox="0 0 860 220" role="img" aria-label="auth.go declares the authenticator interface; auth_windows.go implements it for real via SSPI under a windows build tag, while auth_stub.go implements it as a stub returning ErrUnsupportedPlatform under a not-windows build tag.">
+          <defs>
+            <marker id="arrow2" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <polygon points="0,0 8,4 0,8" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="13" fill="currentColor">
+            <rect x="290" y="14" width="280" height="62" rx="4" fill="none" stroke="currentColor"/>
+            <text x="430" y="38" text-anchor="middle">auth.go</text>
+            <text x="430" y="58" text-anchor="middle" font-size="11" fill="var(--ink-dim)">interface authenticator { token, free }</text>
+
+            <line x1="370" y1="76" x2="220" y2="126" stroke="var(--accent)" marker-end="url(#arrow2)"/>
+            <text x="270" y="102" text-anchor="middle" font-size="11" fill="var(--accent-text)">windows</text>
+
+            <line x1="490" y1="76" x2="640" y2="126" stroke="currentColor" marker-end="url(#arrow2)"/>
+            <text x="590" y="102" text-anchor="middle" font-size="11" fill="var(--ink-dim)">!windows</text>
+
+            <rect x="60" y="128" width="320" height="70" rx="4" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="220" y="152" text-anchor="middle" fill="var(--accent-text)">auth_windows.go</text>
+            <text x="220" y="170" text-anchor="middle" font-size="11" fill="var(--ink-dim)">SSPI: negotiate + ntlm packages</text>
+            <text x="220" y="186" text-anchor="middle" font-size="11" fill="var(--ink-dim)">(github.com/alexbrainman/sspi)</text>
+
+            <rect x="480" y="128" width="320" height="70" rx="4" fill="none" stroke="currentColor"/>
+            <text x="640" y="152" text-anchor="middle">auth_stub.go</text>
+            <text x="640" y="170" text-anchor="middle" font-size="11" fill="var(--ink-dim)">returns ErrUnsupportedPlatform</text>
+            <text x="640" y="186" text-anchor="middle" font-size="11" fill="var(--ink-dim)">at handshake time, not build time</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption><b>Fig. 3</b> — The package compiles and its parsing/dialing logic runs on every OS; only a <em>proxy that actually challenges</em> hits the stub's <code>ErrUnsupportedPlatform</code> on non-Windows.</figcaption>
+    </figure>
+
+    <p><code>token(input []byte)</code> is called once per leg: a <code>nil</code> input on the first call produces the opening token (a Kerberos AP-REQ, or an NTLM Type&nbsp;1 under SPNEGO); every later call feeds in the proxy's continuation token from <code>Proxy-Authenticate</code> and returns the next token to send. <code>negotiateAuth</code> wraps Kerberos-with-NTLM-fallback; <code>ntlmAuth</code> is used when the proxy advertises NTLM only.</p>
+  </section>
+
+  <section id="config">
+    <div class="sec-head"><span class="sec-num">§5</span><h2>Config at a glance</h2></div>
+    <p class="lead">The zero value is deliberately usable — proxy from the environment, current-user SSO credentials, Negotiate preferred over NTLM.</p>
+
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Field</th><th>Default</th><th>What it's for</th></tr></thead>
+        <tbody>
+          <tr><td><code>ProxyURL</code> / <code>Proxy</code></td><td>env (<code>HTTPS_PROXY</code> etc.)</td><td>Which proxy to use; <code>Proxy</code> is a per-request func like <code>http.Transport.Proxy</code> and wins over <code>ProxyURL</code>.</td></tr>
+          <tr><td><code>Schemes</code></td><td><code>{Negotiate, NTLM}</code></td><td>Preference order when the proxy offers more than one.</td></tr>
+          <tr><td><code>SPN</code></td><td><code>HTTP/&lt;proxy-host&gt;</code></td><td>Kerberos service principal name; override when it differs from the proxy's hostname.</td></tr>
+          <tr><td><code>Domain / Username / Password</code></td><td>logged-in user (SSO)</td><td>Explicit credentials; leaving <code>Username</code> empty uses the current Windows logon.</td></tr>
+          <tr><td><code>HandshakeTimeout</code></td><td><code>30s</code></td><td>Bounds the whole multi-leg CONNECT exchange per connection.</td></tr>
+          <tr><td><code>MaxLegs</code></td><td><code>10</code></td><td>Safety valve against a proxy that never converges.</td></tr>
+          <tr><td><code>TLSClientConfig</code></td><td><code>nil</code></td><td>TLS to the <strong>origin</strong>, over the established tunnel.</td></tr>
+          <tr><td><code>ProxyTLSClientConfig</code></td><td><code>nil</code></td><td>TLS to the <strong>proxy</strong> itself, only when its URL scheme is <code>https</code>.</td></tr>
+          <tr><td><code>DialContext</code></td><td><code>net.Dialer</code>, 30s/30s</td><td>Raw TCP dial for the proxy connection (or direct connections).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="casestudy">
+    <div class="sec-head"><span class="sec-num">§6</span><h2>Case study: the tunnel that never opened</h2></div>
+    <p class="lead">RFC 7230 §3.3.3 is explicit: a 2xx response to <code>CONNECT</code> has no body — the bytes right after the header block <em>are</em> the tunnel, and a client must not try to read past them as content.</p>
+    <p><code>writeConnect</code> didn't know that. It called <code>io.Copy(io.Discard, resp.Body)</code> after <strong>every</strong> leg, including the final <code>200</code>. Go's generic response parser only special-cases a zero-length body for <code>HEAD</code> requests — it has no idea this <code>200</code> is answering a <code>CONNECT</code> — so a proxy that (correctly, and commonly) omits <code>Content-Length</code> on that final response reads as "body continues until the connection closes." The connection was about to become a live tunnel that never closes. Every such proxy would hang <strong>every single request</strong>, forever.</p>
+
+    <figure>
+      <div class="panel">
+        <svg viewBox="0 0 860 300" role="img" aria-label="Before: after reading a 200 response to CONNECT, the code unconditionally drains resp.Body, which blocks forever because the connection is now an open tunnel with no end-of-file. After: a 2xx response to CONNECT skips the drain entirely and returns immediately, per RFC 7230 section 3.3.3.">
+          <defs>
+            <marker id="arrow3" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto">
+              <polygon points="0,0 8,4 0,8" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="12.5" fill="currentColor">
+            <text x="220" y="26" text-anchor="middle" font-size="12" letter-spacing="1" fill="var(--warn)">BEFORE</text>
+            <text x="640" y="26" text-anchor="middle" font-size="12" letter-spacing="1" fill="var(--ok)">AFTER</text>
+            <line x1="430" y1="10" x2="430" y2="290" stroke="var(--line)"/>
+
+            <rect x="90" y="44" width="260" height="42" rx="4" fill="none" stroke="currentColor"/>
+            <text x="220" y="70" text-anchor="middle">http.ReadResponse(br, req)</text>
+            <line x1="220" y1="86" x2="220" y2="112" stroke="currentColor" marker-end="url(#arrow3)"/>
+
+            <rect x="90" y="114" width="260" height="42" rx="4" fill="none" stroke="currentColor"/>
+            <text x="220" y="140" text-anchor="middle">resp.StatusCode == 200</text>
+            <line x1="220" y1="156" x2="220" y2="182" stroke="var(--warn)" marker-end="url(#arrow3)"/>
+
+            <rect x="90" y="184" width="260" height="48" rx="4" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/>
+            <text x="220" y="206" text-anchor="middle" fill="var(--warn)">io.Copy(io.Discard, Body)</text>
+            <text x="220" y="222" text-anchor="middle" font-size="10.5" fill="var(--warn)">blocks — tunnel never sends EOF</text>
+
+            <line x1="220" y1="232" x2="220" y2="258" stroke="var(--line)" stroke-dasharray="3,3"/>
+            <text x="220" y="276" text-anchor="middle" font-size="10.5" fill="var(--ink-dim)">return resp — never reached</text>
+
+            <rect x="510" y="44" width="260" height="42" rx="4" fill="none" stroke="currentColor"/>
+            <text x="640" y="70" text-anchor="middle">http.ReadResponse(br, req)</text>
+            <line x1="640" y1="86" x2="640" y2="112" stroke="currentColor" marker-end="url(#arrow3)"/>
+
+            <rect x="510" y="114" width="260" height="42" rx="4" fill="none" stroke="currentColor"/>
+            <text x="640" y="140" text-anchor="middle">resp.StatusCode / 100 == 2</text>
+            <line x1="640" y1="156" x2="640" y2="182" stroke="var(--ok)" marker-end="url(#arrow3)"/>
+
+            <rect x="510" y="184" width="260" height="48" rx="4" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.5"/>
+            <text x="640" y="206" text-anchor="middle" fill="var(--ok)">skip the drain</text>
+            <text x="640" y="222" text-anchor="middle" font-size="10.5" fill="var(--ok)">RFC 7230 §3.3.3: no body on 2xx</text>
+
+            <line x1="640" y1="232" x2="640" y2="258" stroke="currentColor" marker-end="url(#arrow3)"/>
+            <text x="640" y="276" text-anchor="middle" font-size="10.5" fill="var(--ink-dim)">return resp — tunnel handed back now</text>
+          </g>
+        </svg>
+      </div>
+      <figcaption><b>Fig. 4</b> — The whole fix is one added branch in <code>writeConnect</code>: a 2xx response returns before the drain instead of after it.</figcaption>
+    </figure>
+
+    <div class="callout">
+      <span class="tag">How it was found</span>
+      <p>A local end-to-end test harness plays the server side of NTLM via SSPI against the logged-in Windows account — no domain controller involved (see §7). The very first real handshake hung on the final leg. Reverting the fix and rerunning the new regression test, <code>TestConnectSuccessDoesNotBlockOnBody</code> in <code>proxyauth_test.go</code>, reproduced the identical timeout on demand — confirming the mechanism before the fix was written, not just after.</p>
+    </div>
+  </section>
+
+  <section id="testing">
+    <div class="sec-head"><span class="sec-num">§7</span><h2>Testing</h2></div>
+    <p class="lead">Three tiers, each proving something the one before it can't — and all three run on a single Windows machine with nothing external.</p>
+
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Tier</th><th>Run</th><th>Proves</th><th>Needs</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Unit tests</td>
+            <td><code>go test ./...</code></td>
+            <td>Header parsing, scheme choice, SPN default, keep-alive detection, and the CONNECT-body regression (Fig. 4) — pure logic.</td>
+            <td>Nothing — any OS, &lt;1s.</td>
+          </tr>
+          <tr>
+            <td>Build check</td>
+            <td><code>go build ./...</code></td>
+            <td>The real SSPI code path in <code>auth_windows.go</code> actually compiles.</td>
+            <td>A Windows toolchain — cross-compiles fine as <code>GOOS=windows</code> from anywhere.</td>
+          </tr>
+          <tr>
+            <td>Local NTLM end-to-end</td>
+            <td><code>go test -run TestNTLMHandshakeLocal</code></td>
+            <td>The real multi-leg exchange in Fig. 2, driven by genuine SSPI on <em>both</em> ends.</td>
+            <td>A Windows session — no domain controller, via <code>ntlm.AcquireServerCredentials</code> validating locally.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The third tier is the one worth dwelling on: <code>ntlm_local_test.go</code> stands up a fake CONNECT proxy that speaks real server-side NTLM — <code>alexbrainman/sspi/ntlm</code>'s <code>NewServerContext</code> — against the same logged-in account running the test, then relays the tunnel to a real <code>httptest.Server</code>. It is the only test here that exercises <code>auth_windows.go</code> for real, and it is what actually caught the bug in §6.</p>
+  </section>
+
+</main>
+
+<footer>
+  <span>proxyauth.go · auth.go · auth_windows.go · auth_stub.go · doc.go · proxyauth_test.go · ntlm_local_test.go</span>
+  <span>MIT License · © 2026 Sanjay Nagpal</span>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose', theme: 'neutral' });
+</script>
+</body>
+</html>
