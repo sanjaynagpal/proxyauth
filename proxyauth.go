@@ -344,8 +344,15 @@ func writeConnect(conn net.Conn, br *bufio.Reader, targetAddr, credential string
 	if err != nil {
 		return nil, fmt.Errorf("proxyauth: reading CONNECT response: %w", err)
 	}
-	// Drain and close so the connection can be reused for the next leg / the
-	// tunneled origin traffic.
+	if resp.StatusCode/100 == 2 {
+		// RFC 7230 3.3.3: a 2xx response to CONNECT has no body — the bytes
+		// immediately following the header block are the tunnel itself, not
+		// content to read. Such responses often omit Content-Length, so
+		// draining resp.Body here would block forever waiting for a close
+		// that never comes (it's an open tunnel, not an EOF-terminated body).
+		return resp, nil
+	}
+	// Drain and close so the connection can be reused for the next leg.
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	return resp, nil

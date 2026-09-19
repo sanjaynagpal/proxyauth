@@ -1,9 +1,14 @@
 package proxyauth
 
 import (
+	"bufio"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
 
 func hdr(vals ...string) http.Header {
@@ -127,6 +132,69 @@ func TestKeepAlive(t *testing.T) {
 	}
 	if !keepAlive(&http.Response{Header: http.Header{"Proxy-Connection": {"Keep-Alive"}}}) {
 		t.Error("Proxy-Connection: Keep-Alive should be keep-alive")
+	}
+}
+
+// TestConnectSuccessDoesNotBlockOnBody is a regression test: a proxy's 200
+// response to CONNECT has no body per RFC 7230 3.3.3 (the tunnel starts
+// immediately after the header block), and commonly omits Content-Length.
+// writeConnect used to unconditionally drain resp.Body after every leg,
+// which for such a 200 blocks forever reading "until close" on a connection
+// that's actually about to carry live tunnel traffic and never closes.
+func TestConnectSuccessDoesNotBlockOnBody(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "hello from origin")
+	}))
+	defer origin.Close()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		br := bufio.NewReader(conn)
+		if _, err := http.ReadRequest(br); err != nil {
+			return
+		}
+		// Deliberately no Content-Length: a compliant proxy need not send
+		// one on a 2xx CONNECT response, and RFC 7230 says the client must
+		// ignore it even if present.
+		if _, err := io.WriteString(conn, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			return
+		}
+		oc, err := net.Dial("tcp", origin.Listener.Addr().String())
+		if err != nil {
+			return
+		}
+		defer oc.Close()
+		go io.Copy(oc, br)
+		io.Copy(conn, oc)
+	}()
+
+	proxyURL, err := url.Parse("http://" + ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Transport: New(Config{ProxyURL: proxyURL}),
+		Timeout:   5 * time.Second,
+	}
+
+	resp, err := client.Get(origin.URL)
+	if err != nil {
+		t.Fatalf("request through unauthenticated tunnel failed (likely hung on the CONNECT body): %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "hello from origin" {
+		t.Fatalf("got status=%d body=%q, want 200 %q", resp.StatusCode, body, "hello from origin")
 	}
 }
 
