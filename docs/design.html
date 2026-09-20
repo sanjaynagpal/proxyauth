@@ -234,10 +234,11 @@
     <li><a href="#problem">§1 The problem</a></li>
     <li><a href="#architecture">§2 Architecture</a></li>
     <li><a href="#handshake">§3 The handshake</a></li>
-    <li><a href="#platform">§4 Platform split</a></li>
-    <li><a href="#config">§5 Config</a></li>
-    <li><a href="#casestudy">§6 Case study</a></li>
-    <li><a href="#testing">§7 Testing</a></li>
+    <li><a href="#kerberos">§4 Kerberos &amp; SPNEGO</a></li>
+    <li><a href="#platform">§5 Platform split</a></li>
+    <li><a href="#config">§6 Config</a></li>
+    <li><a href="#casestudy">§7 Case study</a></li>
+    <li><a href="#testing">§8 Testing</a></li>
   </ol>
 </nav>
 
@@ -361,8 +362,37 @@ sequenceDiagram
     <p><code>MaxLegs</code> (default <code>10</code>) bounds how many round trips one handshake may take, and <code>HandshakeTimeout</code> (default <code>30s</code>) bounds the whole exchange — both exist purely as safety valves against a misbehaving proxy, since a well-behaved NTLM exchange finishes in exactly three legs and Negotiate/Kerberos in one or two.</p>
   </section>
 
+  <section id="kerberos">
+    <div class="sec-head"><span class="sec-num">§4</span><h2>Kerberos &amp; SPNEGO</h2></div>
+    <p class="lead"><code>Negotiate</code> — the scheme proxyauth prefers — is shorthand for SPNEGO (RFC 4178): an envelope that lets the client and proxy agree on a real mechanism and carries its tokens. When a Kerberos ticket is available, SPNEGO uses it; when it isn't, it quietly falls back to the exact NTLM exchange from Fig. 2, just wrapped in SPNEGO framing instead of sent bare.</p>
+
+    <p>Kerberos itself solves one problem: prove your identity once, then use short-lived, service-specific <strong>tickets</strong> instead of your password everywhere else. Your machine authenticates to a <strong>Key Distribution Center</strong> (KDC, usually a domain controller) exactly once, at logon, and gets back a <strong>Ticket-Granting Ticket</strong> — encrypted so only the KDC can read it, valid for hours. Every later request for a specific service exchanges that TGT for a fresh <strong>service ticket</strong>, named by the service's <strong>Service Principal Name</strong> (SPN). The service decrypts the ticket with a key only it and the KDC share, and never has to call the KDC to check it.</p>
+
+    <figure>
+      <div class="panel">
+        <pre class="mermaid">
+sequenceDiagram
+    participant Y as You (Windows logon)
+    participant K as KDC (domain controller)
+    participant PX as Proxy
+    Y->>K: password — once, at logon
+    K-->>Y: TGT, valid for hours
+    Note over Y: cached — every later ticket&lt;br/&gt;request reuses this, no password
+    Y->>K: TGT + SPN = HTTP/proxy-host
+    K-->>Y: service ticket — short-lived,&lt;br/&gt;this proxy only
+    Y->>PX: service ticket, as the Negotiate token
+    Note over PX: decrypts with its own key —&lt;br/&gt;never calls the KDC to check
+    PX-->>Y: 200 Connection Established
+        </pre>
+      </div>
+      <figcaption><b>Fig. 3</b> — Your password is used exactly once, locally, at Windows logon. Everything proxyauth does at request time — <code>spnFor(proxyURL)</code>, <code>negotiate.NewClientContext</code> — happens after this, using the cached TGT, and never touches a password.</figcaption>
+    </figure>
+
+    <p>The SPN is the one piece proxyauth has to get right: <code>spnFor()</code> defaults it to <code>HTTP/&lt;proxy-host&gt;</code> (<code>Config.SPN</code> overrides it). If that doesn't match what's actually registered in Active Directory for the proxy — a load-balanced hostname behind a different SPN, say — the KDC can't issue a matching ticket, and SPNEGO quietly drops to the three-leg NTLM path instead of failing outright. That silent fallback is convenient in production and confusing in debugging: a <code>Negotiate</code> handshake that unexpectedly takes three legs instead of one is usually an SPN mismatch, not a code bug.</p>
+  </section>
+
   <section id="platform">
-    <div class="sec-head"><span class="sec-num">§4</span><h2>Platform split</h2></div>
+    <div class="sec-head"><span class="sec-num">§5</span><h2>Platform split</h2></div>
     <p class="lead">SSPI is a Windows API, so the actual credential and token machinery lives behind one small interface, swapped in at compile time by build tag.</p>
 
     <figure>
@@ -396,14 +426,14 @@ sequenceDiagram
           </g>
         </svg>
       </div>
-      <figcaption><b>Fig. 3</b> — The package compiles and its parsing/dialing logic runs on every OS; only a <em>proxy that actually challenges</em> hits the stub's <code>ErrUnsupportedPlatform</code> on non-Windows.</figcaption>
+      <figcaption><b>Fig. 4</b> — The package compiles and its parsing/dialing logic runs on every OS; only a <em>proxy that actually challenges</em> hits the stub's <code>ErrUnsupportedPlatform</code> on non-Windows.</figcaption>
     </figure>
 
     <p><code>token(input []byte)</code> is called once per leg: a <code>nil</code> input on the first call produces the opening token (a Kerberos AP-REQ, or an NTLM Type&nbsp;1 under SPNEGO); every later call feeds in the proxy's continuation token from <code>Proxy-Authenticate</code> and returns the next token to send. <code>negotiateAuth</code> wraps Kerberos-with-NTLM-fallback; <code>ntlmAuth</code> is used when the proxy advertises NTLM only.</p>
   </section>
 
   <section id="config">
-    <div class="sec-head"><span class="sec-num">§5</span><h2>Config at a glance</h2></div>
+    <div class="sec-head"><span class="sec-num">§6</span><h2>Config at a glance</h2></div>
     <p class="lead">The zero value is deliberately usable — proxy from the environment, current-user SSO credentials, Negotiate preferred over NTLM.</p>
 
     <div class="tblwrap">
@@ -425,7 +455,7 @@ sequenceDiagram
   </section>
 
   <section id="casestudy">
-    <div class="sec-head"><span class="sec-num">§6</span><h2>Case study: the tunnel that never opened</h2></div>
+    <div class="sec-head"><span class="sec-num">§7</span><h2>Case study: the tunnel that never opened</h2></div>
     <p class="lead">RFC 7230 §3.3.3 is explicit: a 2xx response to <code>CONNECT</code> has no body — the bytes right after the header block <em>are</em> the tunnel, and a client must not try to read past them as content.</p>
     <p><code>writeConnect</code> didn't know that. It called <code>io.Copy(io.Discard, resp.Body)</code> after <strong>every</strong> leg, including the final <code>200</code>. Go's generic response parser only special-cases a zero-length body for <code>HEAD</code> requests — it has no idea this <code>200</code> is answering a <code>CONNECT</code> — so a proxy that (correctly, and commonly) omits <code>Content-Length</code> on that final response reads as "body continues until the connection closes." The connection was about to become a live tunnel that never closes. Every such proxy would hang <strong>every single request</strong>, forever.</p>
 
@@ -474,17 +504,17 @@ sequenceDiagram
           </g>
         </svg>
       </div>
-      <figcaption><b>Fig. 4</b> — The whole fix is one added branch in <code>writeConnect</code>: a 2xx response returns before the drain instead of after it.</figcaption>
+      <figcaption><b>Fig. 5</b> — The whole fix is one added branch in <code>writeConnect</code>: a 2xx response returns before the drain instead of after it.</figcaption>
     </figure>
 
     <div class="callout">
       <span class="tag">How it was found</span>
-      <p>A local end-to-end test harness plays the server side of NTLM via SSPI against the logged-in Windows account — no domain controller involved (see §7). The very first real handshake hung on the final leg. Reverting the fix and rerunning the new regression test, <code>TestConnectSuccessDoesNotBlockOnBody</code> in <code>proxyauth_test.go</code>, reproduced the identical timeout on demand — confirming the mechanism before the fix was written, not just after.</p>
+      <p>A local end-to-end test harness plays the server side of NTLM via SSPI against the logged-in Windows account — no domain controller involved (see §8). The very first real handshake hung on the final leg. Reverting the fix and rerunning the new regression test, <code>TestConnectSuccessDoesNotBlockOnBody</code> in <code>proxyauth_test.go</code>, reproduced the identical timeout on demand — confirming the mechanism before the fix was written, not just after.</p>
     </div>
   </section>
 
   <section id="testing">
-    <div class="sec-head"><span class="sec-num">§7</span><h2>Testing</h2></div>
+    <div class="sec-head"><span class="sec-num">§8</span><h2>Testing</h2></div>
     <p class="lead">Three tiers, each proving something the one before it can't — and all three run on a single Windows machine with nothing external.</p>
 
     <div class="tblwrap">
@@ -494,7 +524,7 @@ sequenceDiagram
           <tr>
             <td>Unit tests</td>
             <td><code>go test ./...</code></td>
-            <td>Header parsing, scheme choice, SPN default, keep-alive detection, and the CONNECT-body regression (Fig. 4) — pure logic.</td>
+            <td>Header parsing, scheme choice, SPN default, keep-alive detection, and the CONNECT-body regression (Fig. 5) — pure logic.</td>
             <td>Nothing — any OS, &lt;1s.</td>
           </tr>
           <tr>
@@ -513,7 +543,7 @@ sequenceDiagram
       </table>
     </div>
 
-    <p>The third tier is the one worth dwelling on: <code>ntlm_local_test.go</code> stands up a fake CONNECT proxy that speaks real server-side NTLM — <code>alexbrainman/sspi/ntlm</code>'s <code>NewServerContext</code> — against the same logged-in account running the test, then relays the tunnel to a real <code>httptest.Server</code>. It is the only test here that exercises <code>auth_windows.go</code> for real, and it is what actually caught the bug in §6.</p>
+    <p>The third tier is the one worth dwelling on: <code>ntlm_local_test.go</code> stands up a fake CONNECT proxy that speaks real server-side NTLM — <code>alexbrainman/sspi/ntlm</code>'s <code>NewServerContext</code> — against the same logged-in account running the test, then relays the tunnel to a real <code>httptest.Server</code>. It is the only test here that exercises <code>auth_windows.go</code> for real, and it is what actually caught the bug in §7.</p>
   </section>
 
 </main>
